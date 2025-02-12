@@ -1,61 +1,37 @@
-const moggoose = require("mongoose");
-const bcrypt = require("bcryptjs");
-// const jwt = require("jsonwebtoken");
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
-const UserSchema = new moggoose.Schema({
-  name: {
-    type: String,
-    required: [true, "Please provide a name"],
-    minlength: [3, "Name must be at least 3 characters"],
-    maxlength: [50, "Name must be no more than 50 characters"],
-  },
-  email: {
-    type: String,
-    required: [true, "Please provide a email"],
-    match: [
-      /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
-      "Please provide a valid email",
-    ],
-    unique: true,
-  },
-  password: {
-    type: String,
-    required: [true, "Please provide a password"],
-    minlength: [6, "Password must be at least 6 characters"],
-    // match: [
-    //   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+])[A-Za-z\d!@#$%^&*()_+]{6,12}$/,
-    //   "Please provide a valid password (6-12 symbols that include at least 1 capital letter, at least 1 digit and at least 1 special symbol)",
-    // ],
-  },
-  isSeller: {
-    type: Boolean,
-    default: false,
-  },
+const UserSchema = new mongoose.Schema({
+	name: {
+		type: String,
+		required: [true, 'Name required.'],
+		minLength: 3,
+		maxLength: 50
+	},
+	email: {
+		type: String,
+		required: [true, 'Email required.'],
+		match: [
+			/(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9]))\.){3}(?:(2(5[0-5]|[0-4][0-9])|1[0-9][0-9]|[1-9]?[0-9])|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])/,
+			'Email not formatted correctly.'
+		],
+		unique: true
+	},
+	password: {
+		type: String,
+		required: [true, 'Password required.'],
+		minLength: 6
+	}
 });
 
-UserSchema.pre("save", async function () {
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+UserSchema.pre('save', async function () {
+	const salt = await bcrypt.genSalt(parseInt(process.env.SALT_ROUNDS) || 10);
+	this.password = await bcrypt.hash(this.password, salt);
 });
 
-UserSchema.methods.getName = function () {
-  return this.name;
+UserSchema.methods.comparePassword = async function (password) {
+	const isMatch = await bcrypt.compare(password, this.password);
+	return isMatch;
 };
 
-// UserSchema.methods.createJWT = function () {
-//   return jwt.sign(
-//     { userId: this._id, name: this.name },
-//     process.env.JWT_SECRET,
-//     {
-//       expiresIn: process.env.JWT_LIFETIME,
-//     }
-//   );
-// };
-
-UserSchema.methods.comparePassword = async function (candidatePassword) {
-  const isMatch = await bcrypt.compare(candidatePassword, this.password);
-  return isMatch;
-};
-
-
-module.exports = moggoose.model("User", UserSchema);
+export default mongoose.model('User', UserSchema);
