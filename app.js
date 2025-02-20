@@ -1,25 +1,23 @@
 import express from 'express';
 import 'express-async-errors';
-
 import rateLimiter from 'express-rate-limit';
 import helmet from 'helmet';
 import hpp from 'hpp';
 import xss from './middleware/security/xss.js';
-
+import mongoSanitize from './middleware/security/mongoSanitize.js';
 import session from 'express-session';
 import connectMongoSession from 'connect-mongodb-session';
-import passportInit from './utils/security/passportInit.js';
+import passportSetup from './security/passportSetup.js';
 import passport from 'passport';
 import flash from 'connect-flash';
 import storeLocals from './middleware/session/storeLocals.js';
 import cookieParser from 'cookie-parser';
 import csrf from 'host-csrf';
-
 import authMiddleware from './middleware/security/auth.js';
-
+import wordRouter from './routes/secretWord.js';
 import sessionsRouter from './routes/sessions.js';
 import secretWordRouter from './routes/secretWord.js';
-
+import jobsRouter from './routes/jobs.js';
 import notFound from './middleware/notFound.js';
 import errorHandler from './middleware/errorHandler.js';
 
@@ -36,7 +34,8 @@ app.use(
 	express.urlencoded({ extended: true }),
 	helmet(),
 	hpp(),
-	xss()
+	xss(),
+	mongoSanitize()
 );
 
 if (app.get('env') === 'development') {
@@ -55,8 +54,7 @@ const sessionParams = {
 	saveUninitialized: true,
 	store,
 	cookie: {
-		secure: false,
-		sameSite: 'strict'
+		sameSite: true
 	}
 };
 const csrfOptions = {
@@ -74,9 +72,10 @@ if (app.get('env') === 'production') {
 }
 
 app.use(session(sessionParams));
-passportInit();
+passportSetup();
 app.use(passport.initialize(), passport.session());
 app.use(flash(), storeLocals);
+
 app.use(cookieParser(process.env.SESSION_SECRET));
 const csrfMiddleware = csrf(csrfOptions);
 app.use(csrfMiddleware);
@@ -87,8 +86,8 @@ app.get('/', (req, res) => {
 	res.render('index');
 });
 app.use('/sessions', sessionsRouter);
-app.use('/secretWord', authMiddleware, secretWordRouter);
-
+app.use('/secretWord', csrfMiddleware, authMiddleware, wordRouter);
+app.use('/jobs', csrfMiddleware, authMiddleware, jobsRouter);
 app.use(notFound, errorHandler);
 
 const port = process.env.PORT || 5000;
