@@ -1,104 +1,109 @@
-const express = require("express");
-require("express-async-errors");
-const session = require("express-session");
-const MongoDBStore = require("connect-mongodb-session")(session);
-const dotenv = require("dotenv");
-const mongoose = require("mongoose");
+import express from 'express';
+import 'express-async-errors';
+import rateLimiter from 'express-rate-limit';
+import helmet from 'helmet';
+import hpp from 'hpp';
+import xss from './middleware/security/xss.js';
+import mongoSanitize from './middleware/security/mongoSanitize.js';
+import session from 'express-session';
+import connectMongoSession from 'connect-mongodb-session';
+import passportSetup from './security/passportSetup.js';
+import passport from 'passport';
+import flash from 'connect-flash';
+import storeLocals from './middleware/session/storeLocals.js';
+import cookieParser from 'cookie-parser';
+import csrf from 'host-csrf';
+import authMiddleware from './middleware/security/auth.js';
+import wordRouter from './routes/secretWord.js';
+import sessionsRouter from './routes/sessions.js';
+import secretWordRouter from './routes/secretWord.js';
+import jobsRouter from './routes/jobs.js';
+import notFound from './middleware/notFound.js';
+import errorHandler from './middleware/errorHandler.js';
 
-dotenv.config(); // Load environment variables
+import connectDatabase from './db/connect.js';
 
 const app = express();
 
-// Set up EJS as the view engine
-app.set("view engine", "ejs");
-app.use(express.urlencoded({ extended: true }));
+app.set('view engine', 'ejs');
+app.use(
+	rateLimiter({
+		windowMs: 15 * 60 * 1000, // 15 minutes
+		max: 100 // max requests, per IP, per amount of time above
+	}),
+	express.urlencoded({ extended: true }),
+	helmet(),
+	hpp(),
+	xss(),
+	mongoSanitize()
+);
 
-// MongoDB connection
-const mongoUri = process.env.MONGO_URI;
-mongoose
-  .connect(mongoUri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log("Connected to MongoDB"))
-  .catch((err) => console.error("MongoDB connection error:", err));
-
-// Session configuration
-const store = new MongoDBStore({
-  uri: mongoUri,
-  collection: "mySessions",
-});
-store.on("error", (error) => console.log(error));
-
-const sessionParms = {
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: true,
-  store: store,
-  cookie: { secure: false, sameSite: "strict" },
-};
-
-if (app.get("env") === "production") {
-  app.set("trust proxy", 1);
-  sessionParms.cookie.secure = true;
+if (app.get('env') === 'development') {
+	process.loadEnvFile('./.env');
 }
 
-app.use(session(sessionParms));
-app.use(require("connect-flash")());
-
-// Middleware to pass flash messages to all views
-app.use((req, res, next) => {
-  res.locals.info = req.flash("info");
-  res.locals.errors = req.flash("error");
-  next();
+const MongoDBStore = connectMongoSession(session);
+const store = new MongoDBStore({
+	uri: process.env.MONGO_URI,
+	collection: 'mySessions'
 });
-
-// Secret word handling
-app.get("/secretWord", (req, res) => {
-  if (!req.session.secretWord) {
-    req.session.secretWord = "syzygy";
-  }
-  res.render("secretWord", { secretWord: req.session.secretWord });
-});
-
-app.post("/secretWord", (req, res) => {
-  if (req.body.secretWord.toUpperCase()[0] === "P") {
-    req.flash("error", "That word won't work!");
-    req.flash("error", "You can't use words that start with p.");
-  } else {
-    req.session.secretWord = req.body.secretWord;
-    req.flash("info", "The secret word was changed.");
-  }
-  res.redirect("/secretWord");
-});
-
-// Error handling
-app.use((req, res) => {
-  res.status(404).send(`That page (${req.url}) was not found.`);
-});
-
-app.use((err, req, res, next) => {
-  res.status(500).send(err.message);
-  console.log(err);
-});
-
-// Start the server
-const port = process.env.PORT || 3000;
-const start = async () => {
-  try {
-    // Ensure MongoDB is connected before starting the server
-    await mongoose.connect(mongoUri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log("MongoDB connected successfully");
-
-    app.listen(port, () =>
-      console.log(`Server is listening on port ${port}...`)
-    );
-  } catch (error) {
-    console.error("Failed to start the server:", error);
-  }
+store.on('error', console.error);
+const sessionParams = {
+	secret: process.env.SESSION_SECRET,
+	resave: true,
+	saveUninitialized: true,
+	store,
+	cookie: {
+		sameSite: true
+	}
+};
+const csrfOptions = {
+	protected_operations: ['POST'],
+	protected_content_types: [
+		'application/json',
+		'application/x-www-form-urlencoded'
+	],
+	development_mode: true
 };
 
+if (app.get('env') === 'production') {
+	sessionParams.cookie.secure = true;
+	csrfOptions.development_mode = false;
+}
+
+app.use(session(sessionParams));
+passportSetup();
+app.use(passport.initialize(), passport.session());
+app.use(flash(), storeLocals);
+
+app.use(cookieParser(process.env.SESSION_SECRET));
+const csrfMiddleware = csrf(csrfOptions);
+app.use(csrfMiddleware);
+
+app.get('/', (req, res) => {
+	// initial CSRF token depends on user going to home page first
+	csrf.token(req, res);
+	res.render('index');
+});
+app.use('/sessions', sessionsRouter);
+app.use('/secretWord', csrfMiddleware, authMiddleware, wordRouter);
+app.use('/jobs', csrfMiddleware, authMiddleware, jobsRouter);
+app.use(notFound, errorHandler);
+
+const port = process.env.PORT || 5000;
+const start = async () => {
+	try {
+		await connectDatabase(process.env.MONGO_URI);
+		app.listen(port, err => {
+			if (err) {
+				console.error(`Could not start server on port ${port}.`);
+				throw err;
+			}
+			console.log(`Server listening on port ${port}.`);
+			console.log(`Access at: http://localhost:${port}`);
+		});
+	} catch (error) {
+		console.log(error);
+	}
+};
 start();
