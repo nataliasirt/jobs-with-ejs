@@ -1,4 +1,4 @@
-const mongoose = require('mongoose')
+import * as mongoose from 'mongoose';
 
 const JobSchema = new mongoose.Schema(
   {
@@ -24,6 +24,9 @@ const JobSchema = new mongoose.Schema(
     },
   },
   { timestamps: true }
-)
+);
+
+const validStatuses = ['interview', 'declined', 'pending'];
+export { validStatuses };
 
 export default mongoose.model('Job', JobSchema);

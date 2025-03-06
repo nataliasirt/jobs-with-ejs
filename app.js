@@ -20,7 +20,10 @@ import secretWordRouter from './routes/secretWord.js';
 import jobsRouter from './routes/jobs.js';
 import notFound from './middleware/notFound.js';
 import errorHandler from './middleware/errorHandler.js';
-
+import mongoSanitize from './middleware/security/mongoSanitize.js';
+import session from 'express-session';
+import connectMongoSession from 'connect-mongodb-session';
+import passportSetup from './utils/security/passportInit.js';
 import connectDatabase from './db/connect.js';
 
 const app = express();

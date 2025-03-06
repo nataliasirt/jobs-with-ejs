@@ -2,7 +2,6 @@ import express from 'express';
 import csrf from 'host-csrf';
 import passport from 'passport';
 const router = express.Router();
-import csrf from 'host-csrf';
 
 import {
 	logonShow,
